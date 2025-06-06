@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-crawler
+  labels:
+    app: mcp-crawler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-crawler
+  template:
+    metadata:
+      labels:
+        app: mcp-crawler
+    spec:
+      containers:
+        - name: mcp-crawler
+          image: ghcr.io/celesrenata/deepweb-proxy:latest
+          env:
+            - name: MYSQL_HOST
+              value: "mariadb.mariadb-service"
+            - name: MYSQL_PORT
+              value: "3306"
+            - name: MYSQL_USER
+              value: "splinter-research"
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secrets
+                  key: MYSQL_PASSWORD
+            - name: MYSQL_DATABASE
+              value: "splinter-research"
+            - name: CRAWL_DEPTH
+              value: "1"
+            - name: MAX_PAGES_PER_SITE
+              value: "50"
+          volumeMounts:
+            - name: mcp-config
+              mountPath: /mnt/config
+          ports:
+            - containerPort: 8080
+            - containerPort: 9050
+            - containerPort: 4444
+            - containerPort: 7070
+      volumes:
+        - name: mcp-config
+          persistentVolumeClaim:
+            claimName: mcp-config-pvc

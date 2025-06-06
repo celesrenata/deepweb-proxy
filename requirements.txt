@@ -1,0 +1,22 @@
+# Web framework
+fastapi>=0.103.1
+uvicorn>=0.23.2
+
+# Database
+sqlalchemy>=2.0.20
+pymysql>=1.1.0
+cryptography>=41.0.3  # Required for PyMySQL
+
+# Web scraping and HTTP
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+requests[socks]>=2.31.0  # For SOCKS proxy support
+aiohttp>=3.8.5
+
+# Utilities
+python-dotenv>=1.0.0  # For loading .env files
+pydantic>=2.3.0  # Data validation
+
+# Optional: For development
+pytest>=7.4.0
+black>=23.7.0

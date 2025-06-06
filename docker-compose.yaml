@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - ./output:/app/output
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=splinter-research
+      - MYSQL_PASSWORD=PSCh4ng3me!
+      - MYSQL_DATABASE=splinter-research
+      - OLLAMA_ENDPOINT=http://your-ollama-host:2701/api/generate
+      - AI_MODEL=llama3.1:8b
+      - OUTPUT_DIR=/app/output
+    depends_on:
+      - mysql
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=strongRootPassword
+      - MYSQL_DATABASE=splinter-research
+      - MYSQL_USER=splinter-research
+      - MYSQL_PASSWORD=PSCh4ng3me!
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password
+
+  webserver:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=splinter-research
+      - MYSQL_PASSWORD=PSCh4ng3me!
+      - MYSQL_DATABASE=splinter-research
+    command: ["python", "webserver.py"]
+    depends_on:
+      - mysql
+
+volumes:
+  mysql_data:
