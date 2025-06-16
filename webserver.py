@@ -3,7 +3,7 @@ from pydantic import BaseModel
 import uvicorn
 import os
 import logging
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, text
 from typing import List, Optional
 import getpass
 
@@ -290,7 +290,7 @@ async def health_check():
     try:
         # Test database connection
         session = get_db_session()
-        session.execute("SELECT 1")
+        session.execute(text("SELECT 1"))
         session.close()
         return {"status": "ok", "database": "connected"}
     except Exception as e:

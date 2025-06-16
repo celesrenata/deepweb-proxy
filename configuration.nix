@@ -1,5 +1,8 @@
 { config, pkgs, ... }:
 {
+  imports = [
+    ./deepweb-proxy.nix
+  ];
   # Enable TOR and I2P services
   services.tor.enable = true;
   services.i2pd.enable = true;
@@ -17,6 +20,7 @@
     python3Packages.beautifulsoup4
     python3Packages.fastapi
     python3Packages.uvicorn
+    python3Packages.minio
     python3Packages.pip
     python3Packages.pillow
     python3Packages.python-dateutil
@@ -25,9 +29,11 @@
     file          # For mime type detection
     tor
     i2pd
-    cacert        # SSL certificates
+    cacert        # SSL certificates 
+    openssl       # SSL certificates
     mariadb       # Database client for direct access
     socat         # For debugging network connections
+    nettools
   ];
 
   # Configure larger file upload size for MySQL

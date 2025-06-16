@@ -21,7 +21,7 @@ OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "http://10.1.1.12:2701/api/genera
 MULTIMODAL_MODEL = os.getenv("MULTIMODAL_MODEL", "llava:latest")  # Change to your multimodal model
 TEXT_MODEL = os.getenv("TEXT_MODEL", "llama3.1:8b")  # For text-only analysis
 MAX_IMAGES_PER_PAGE = 5  # Limit images to process per page
-MAX_IMAGE_SIZE = (800, 800)  # Resize large images to save bandwidth
+MAX_IMAGE_SIZE = (4000, 4000)  # Resize large images to save bandwidth
 
 
 def get_recent_pages(limit=10):
@@ -45,11 +45,16 @@ def get_page_with_media(page_id):
         if not page:
             return None
 
-        # Fetch associated media files
-        media_files = session.query(MediaFile).filter(
+        # Fetch associated media files - remove limit if set to 0 (unlimited)
+        query = session.query(MediaFile).filter(
             MediaFile.page_id == page_id,
             MediaFile.content != None  # Only get files with content
-        ).limit(MAX_IMAGES_PER_PAGE).all()
+        )
+
+        if MAX_IMAGES_PER_PAGE > 0:
+            media_files = query.limit(MAX_IMAGES_PER_PAGE).all()
+        else:
+            media_files = query.all()  # Get ALL media files
 
         return page, media_files
     except Exception as e:
@@ -386,3 +391,4 @@ if __name__ == "__main__":
             save_analysis_results(results, filename if filename else None, format=format_choice)
     else:
         print("No results found.")
+        

@@ -1,3 +1,4 @@
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,10 +15,132 @@ spec:
       labels:
         app: mcp-crawler
     spec:
+      # Enhanced init container for system limits and I2P setup
+      initContainers:
+        - name: init-limits
+          image: busybox:1.35
+          command:
+            - sh
+            - -c
+            - |
+              echo 'Setting file descriptor limits and system configuration...'
+              
+              # Set file descriptor limits more aggressively
+              ulimit -n 65536 2>/dev/null && echo "✓ Set ulimit to 65536" || {
+                echo "⚠ Could not set ulimit to 65536, trying incremental limits..."
+                for limit in 32768 16384 8192 4096; do
+                  if ulimit -n $limit 2>/dev/null; then
+                    echo "✓ Set ulimit to $limit"
+                    break
+                  fi
+                done
+              }
+              
+              # Set system-wide file limits if possible
+              if [ -w /proc/sys/fs/file-max ]; then
+                echo 1048576 > /proc/sys/fs/file-max 2>/dev/null && echo "✓ Increased system file-max"
+              fi
+              
+              # Verify final limits
+              echo "Final ulimit: $(ulimit -n)"
+              
+              # Create I2P directories with proper structure
+              echo 'Creating I2P directories...'
+              mkdir -p /var/lib/i2pd/netDb
+              mkdir -p /var/lib/i2pd/{certificates/{family,reseed},peerProfiles,addressbook}
+              
+              # Create netDb subdirectories for better performance
+              for prefix in {0..9} {a..f}; do
+                for suffix in {0..9} {a..f}; do
+                  mkdir -p "/var/lib/i2pd/netDb/r${prefix}${suffix}"
+                done
+              done
+              
+              # Set proper permissions
+              chmod -R 755 /var/lib/i2pd
+              
+              # Create dummy certificate files to prevent warnings
+              touch /var/lib/i2pd/certificates/family/.dummy
+              touch /var/lib/i2pd/certificates/reseed/.dummy
+              
+              echo '✓ I2P directory structure ready'
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - SYS_RESOURCE
+                - NET_ADMIN
+                - IPC_LOCK
+                - SYS_ADMIN
+            allowPrivilegeEscalation: true
+            runAsNonRoot: false
+          volumeMounts:
+            - name: i2p-data
+              mountPath: /var/lib/i2pd
       containers:
         - name: mcp-crawler
           image: ghcr.io/celesrenata/deepweb-proxy:latest
+
+          # Enhanced security context with file descriptor limits
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - SYS_RESOURCE
+                - NET_ADMIN
+                - IPC_LOCK
+                - SYS_ADMIN
+            allowPrivilegeEscalation: true
+            runAsNonRoot: false
+
           env:
+            # CRITICAL: File descriptor limits for I2P
+            - name: ULIMIT_NOFILE
+              value: "65536"
+            - name: I2P_OPENFILES_LIMIT
+              value: "32768"
+            - name: FORCE_HIGH_LIMITS
+              value: "true"
+
+            # REALISTIC I2P Configuration - EXTREMELY Patient
+            - name: I2P_BOOTSTRAP_TIMEOUT_MINUTES
+              value: "25"                   # Increased from 15 - give even more time
+            - name: I2P_HEALTH_CHECK_ATTEMPTS
+              value: "90"                   # 90 attempts = 15 minutes at 10 second intervals
+            - name: I2P_HEALTH_CHECK_INTERVAL
+              value: "10"                   # 10 seconds between checks
+            - name: I2P_EXPECT_CONSOLE_BYTES
+              value: "100"                  # Reduced from 1000 - just need SOME response
+            - name: I2P_INITIAL_GRACE_MINUTES
+              value: "8"                    # Don't even check console for first 8 minutes
+            - name: I2P_FORCE_BOOTSTRAP
+              value: "false"
+            - name: I2P_BOOTSTRAP_PATIENCE
+              value: "true"
+            - name: I2P_GENTLE_MODE
+              value: "true"
+            - name: I2P_RESTART_THRESHOLD_MINUTES
+              value: "30"                   # Only restart after 30 minutes
+            - name: I2P_FALLBACK_TO_TOR
+              value: "true"
+
+            # I2P Internal Services Configuration - ADDED THESE
+            - name: USE_I2P_INTERNAL_PROXIES
+              value: "true"
+            - name: I2P_INTERNAL_PROXIES
+              value: "notbob.i2p,purokishi.i2p,stormycloud.i2p,false.i2p"
+            - name: I2P_PROXY_FALLBACK_MODE
+              value: "failover"
+
+            # External Tor Proxy Configuration - ADDED THESE
+            - name: USE_EXTERNAL_TOR_PROXIES
+              value: "false"
+            - name: EXTERNAL_TOR_PROXIES
+              value: "socks5://tor-proxy1.example.com:9050,socks5://tor-proxy2.example.com:9050"
+            - name: TOR_PROXY_FALLBACK_MODE
+              value: "local"
+
+            # Database Configuration
             - name: MYSQL_HOST
               value: "mariadb.mariadb-service"
             - name: MYSQL_PORT
@@ -31,11 +154,66 @@ spec:
                   key: MYSQL_PASSWORD
             - name: MYSQL_DATABASE
               value: "splinter-research"
+
+            # MinIO Configuration
+            - name: MINIO_ENDPOINT
+              value: "minio-crawler-hl.minio-service:9000"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secrets
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secrets
+                  key: MINIO_SECRET_KEY
+            - name: MINIO_SECURE
+              value: "false"
+            - name: MINIO_BUCKET_IMAGES
+              value: "crawler-images"
+            - name: MINIO_BUCKET_AUDIO
+              value: "crawler-audio"
+            - name: MINIO_BUCKET_VIDEO
+              value: "crawler-videos"
+            - name: MINIO_BUCKET_OTHER
+              value: "crawler-media"
+
+            # Conservative Configuration
             - name: CRAWL_DEPTH
-              value: "1"
+              value: "5"
             - name: MAX_PAGES_PER_SITE
-              value: "50"
+              value: "500"
+            - name: MAX_IMAGE_SIZE
+              value: "20971520"  # 2MB
+            - name: MAX_AUDIO_SIZE
+              value: "20971520"  # 2MB
+            - name: MAX_VIDEO_SIZE
+              value: "52428800"  # 5MB
+            - name: DOWNLOAD_ALL_MEDIA
+              value: "true"
+
+            # Single-threaded processing
+            - name: PARALLEL_SITES
+              value: "3"
+            - name: PARALLEL_PAGES
+              value: "2"
+
+            # Proxy Configuration
+            - name: ENABLE_TOR
+              value: "true"
+            - name: ENABLE_I2P
+              value: "true"
+            - name: TOR_SOCKS_PORT
+              value: "9050"
+            - name: I2P_HTTP_PROXY_PORT
+              value: "4444"
+            - name: I2P_CONSOLE_PORT
+              value: "7070"
+
           volumeMounts:
+            - name: i2p-data
+              mountPath: /var/lib/i2pd
             - name: mcp-config
               mountPath: /mnt/config
           ports:
@@ -43,7 +221,48 @@ spec:
             - containerPort: 9050
             - containerPort: 4444
             - containerPort: 7070
+
+          resources:
+            requests:
+              memory: "1.5Gi"
+              cpu: "750m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+
+          # EXTREMELY PATIENT Health checks - Realistic for I2P
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 900        # 15 minutes - realistic for I2P bootstrap
+            periodSeconds: 120              # Check every 2 minutes
+            timeoutSeconds: 60              # 1 minute timeout
+            failureThreshold: 8             # Very tolerant
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 600        # 10 minutes before first check
+            periodSeconds: 60               # Check every minute
+            timeoutSeconds: 30
+            failureThreshold: 10            # Very tolerant
+
+          # Startup probe that allows up to 20 minutes for I2P bootstrap
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 120        # Wait 2 minutes before first check
+            periodSeconds: 60               # Check every minute
+            timeoutSeconds: 20
+            failureThreshold: 20            # 20 failures × 60 seconds = 20 minutes total
+
       volumes:
         - name: mcp-config
           persistentVolumeClaim:
             claimName: mcp-config-pvc
+        - name: i2p-data
+          persistentVolumeClaim:
+            claimName: i2p-data-pvc
